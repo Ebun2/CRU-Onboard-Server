@@ -87,26 +87,27 @@ router.post('/admin/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const admin = await Admin.findOne({ email });
-    if (!admin) {
-      return res.status(400).json({ message: 'Invalid email or password' });
-    }
+    // Fixed admin credentials
+    const ADMIN_EMAIL = "admin@example.com";
+    const ADMIN_PASSWORD = "123456";
 
-    const isMatch = await bcrypt.compare(password, admin.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid email or password' });
+    if (email !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) {
+      return res.status(400).json({
+        message: "Invalid email or password"
+      });
     }
 
     res.json({
-      _id: admin._id,
-      fullName: admin.fullName,
-      email: admin.email,
-      role: admin.role,
-      token: generateToken(admin._id, 'admin')
+      fullName: "Admin",
+      email: ADMIN_EMAIL,
+      role: "admin",
+      token: generateToken("admin_id", "admin")
     });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      message: error.message
+    });
   }
 });
 

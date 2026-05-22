@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const Question = require('../models/Question');
 const QuizAttempt = require('../models/QuizAttempt');
@@ -43,6 +44,22 @@ router.get('/:topicId/result', protect, async (req, res) => {
 router.post('/:topicId/submit', protect, async (req, res) => {
   try {
     const { answers } = req.body;
+    if (req.user.role !== 'student') {
+      return res.status(403).json({ message: 'Only students can submit quizzes' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(req.user.id)) {
+      return res.status(400).json({ message: 'Invalid student account for quiz submission' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.topicId)) {
+      return res.status(400).json({ message: 'Invalid topic id' });
+    }
+
+    if (!Array.isArray(answers)) {
+      return res.status(400).json({ message: 'Answers must be submitted as an array' });
+    }
+
     const questions = await Question.find({ topicId: req.params.topicId }).sort({ order: 1 });
     if (!questions.length) return res.status(404).json({ message: 'No questions found for this topic' });
 
