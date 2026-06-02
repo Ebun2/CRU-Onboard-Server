@@ -1,13 +1,116 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const Topic = require('../models/Topic');
 const { protect, adminProtect } = require('../middleware/auth');
+
+const CLOUDINARY_UPLOAD_FOLDER = process.env.CLOUDINARY_UPLOAD_FOLDER || 'cru-onboard/topic-images';
+const dataImagePattern = /^data:image\/[a-zA-Z0-9.+-]+;base64,/;
+
+const isCloudinaryConfigured = () => (
+  process.env.CLOUDINARY_CLOUD_NAME &&
+  process.env.CLOUDINARY_API_KEY &&
+  process.env.CLOUDINARY_API_SECRET
+);
+
+const signCloudinaryParams = (params) => {
+  const stringToSign = Object.keys(params)
+    .sort()
+    .map((key) => `${key}=${params[key]}`)
+    .join('&');
+
+  return crypto
+    .createHash('sha1')
+    .update(`${stringToSign}${process.env.CLOUDINARY_API_SECRET}`)
+    .digest('hex');
+};
+
+const uploadImageToCloudinary = async (imageData) => {
+  if (!imageData) return '';
+  if (!dataImagePattern.test(imageData)) return imageData;
+
+  if (!isCloudinaryConfigured()) {
+    throw new Error('Cloudinary is not configured. Add CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET to the server environment.');
+  }
+
+  const timestamp = Math.round(Date.now() / 1000);
+  const uploadParams = {
+    folder: CLOUDINARY_UPLOAD_FOLDER,
+    timestamp
+  };
+
+  const formData = new FormData();
+  formData.append('file', imageData);
+  formData.append('api_key', process.env.CLOUDINARY_API_KEY);
+  formData.append('folder', CLOUDINARY_UPLOAD_FOLDER);
+  formData.append('timestamp', String(timestamp));
+  formData.append('signature', signCloudinaryParams(uploadParams));
+
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload`,
+    {
+      method: 'POST',
+      body: formData
+    }
+  );
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(result.error?.message || 'Cloudinary upload failed');
+  }
+
+  return result.secure_url || result.url || '';
+};
+
+const sanitizeResourceLinks = (resourceLinks) => (
+  Array.isArray(resourceLinks)
+    ? resourceLinks
+        .map((link) => ({
+          url: link?.url?.trim(),
+          description: link?.description?.trim()
+        }))
+        .filter((link) => link.url && link.description)
+    : []
+);
+
+const buildTopicPayload = async (body) => {
+  const dressCodeGuide = body.dressCodeGuide || {};
+  const [doImage, dontImage] = await Promise.all([
+    uploadImageToCloudinary(dressCodeGuide.doImage),
+    uploadImageToCloudinary(dressCodeGuide.dontImage)
+  ]);
+
+  return {
+    title: body.title,
+    description: body.description,
+    content: body.content,
+    order: body.order,
+    isPublished: body.isPublished,
+    category: body.category,
+    dressCodeGuide: {
+      doImage,
+      dontImage
+    },
+    resourceLinks: sanitizeResourceLinks(body.resourceLinks)
+  };
+};
 
 // @route   GET /api/topics
 // @desc    Get all published topics (for students)
 router.get('/', protect, async (req, res) => {
   try {
     const topics = await Topic.find({ isPublished: true }).sort({ order: 1 });
+    res.json(topics);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @route   GET /api/topics/admin/all
+// @desc    Get all topics including unpublished (for admin)
+router.get('/admin/all', adminProtect, async (req, res) => {
+  try {
+    const topics = await Topic.find().sort({ order: 1 });
     res.json(topics);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -23,17 +126,6 @@ router.get('/:id', protect, async (req, res) => {
       return res.status(404).json({ message: 'Topic not found' });
     }
     res.json(topic);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// @route   GET /api/topics/admin/all
-// @desc    Get all topics including unpublished (for admin)
-router.get('/admin/all', adminProtect, async (req, res) => {
-  try {
-    const topics = await Topic.find().sort({ order: 1 });
-    res.json(topics);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -58,17 +150,8 @@ router.get('/admin/all', adminProtect, async (req, res) => {
 // });
 router.post('/', adminProtect, async (req, res) => {
   try {
-    console.log('Request body:', req.body);
-    const { title, description, content, order, isPublished, category } = req.body;
-    console.log('Category received:', category);
-    const topic = await Topic.create({
-      title,
-      description,
-      content,
-      order,
-      isPublished,
-      category
-    });
+    const payload = await buildTopicPayload(req.body);
+    const topic = await Topic.create(payload);
     res.status(201).json(topic);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -79,9 +162,10 @@ router.post('/', adminProtect, async (req, res) => {
 // @desc    Update a topic (admin only)
 router.put('/:id', adminProtect, async (req, res) => {
   try {
+    const payload = await buildTopicPayload(req.body);
     const topic = await Topic.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      payload,
       { new: true }
     );
     if (!topic) {

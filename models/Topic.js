@@ -72,7 +72,29 @@ const topicSchema = new mongoose.Schema({
   isPublished: {
     type: Boolean,
     default: false
-  }
+  },
+  dressCodeGuide: {
+    doImage: {
+      type: String,
+      default: ''
+    },
+    dontImage: {
+      type: String,
+      default: ''
+    }
+  },
+  resourceLinks: [{
+    url: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    description: {
+      type: String,
+      required: true,
+      trim: true
+    }
+  }]
 }, { timestamps: true });
 
 module.exports = mongoose.model('Topic', topicSchema);
