@@ -81,8 +81,41 @@ const topicSchema = new mongoose.Schema({
     dontImage: {
       type: String,
       default: ''
-    }
+    },
+    doItems: [{
+      image: {
+        type: String,
+        required: true
+      },
+      description: {
+        type: String,
+        required: true,
+        trim: true
+      }
+    }],
+    dontItems: [{
+      image: {
+        type: String,
+        required: true
+      },
+      description: {
+        type: String,
+        required: true,
+        trim: true
+      }
+    }]
   },
+  topicImages: [{
+    image: {
+      type: String,
+      required: true
+    },
+    description: {
+      type: String,
+      required: true,
+      trim: true
+    }
+  }],
   resourceLinks: [{
     url: {
       type: String,

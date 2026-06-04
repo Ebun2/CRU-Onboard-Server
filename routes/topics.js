@@ -73,11 +73,39 @@ const sanitizeResourceLinks = (resourceLinks) => (
     : []
 );
 
+const sanitizeImageItems = (items) => (
+  Array.isArray(items)
+    ? items
+        .map((item) => ({
+          image: item?.image?.trim(),
+          description: item?.description?.trim()
+        }))
+        .filter((item) => item.image && item.description)
+    : []
+);
+
+const uploadImageItems = async (items) => (
+  Promise.all(
+    sanitizeImageItems(items).map(async (item) => ({
+      image: await uploadImageToCloudinary(item.image),
+      description: item.description
+    }))
+  )
+);
+
 const buildTopicPayload = async (body) => {
   const dressCodeGuide = body.dressCodeGuide || {};
-  const [doImage, dontImage] = await Promise.all([
-    uploadImageToCloudinary(dressCodeGuide.doImage),
-    uploadImageToCloudinary(dressCodeGuide.dontImage)
+  const legacyDoItems = dressCodeGuide.doImage
+    ? [{ image: dressCodeGuide.doImage, description: dressCodeGuide.doDescription || 'Acceptable dress code example.' }]
+    : [];
+  const legacyDontItems = dressCodeGuide.dontImage
+    ? [{ image: dressCodeGuide.dontImage, description: dressCodeGuide.dontDescription || 'Dress code example to avoid.' }]
+    : [];
+
+  const [doItems, dontItems, topicImages] = await Promise.all([
+    uploadImageItems(dressCodeGuide.doItems?.length ? dressCodeGuide.doItems : legacyDoItems),
+    uploadImageItems(dressCodeGuide.dontItems?.length ? dressCodeGuide.dontItems : legacyDontItems),
+    uploadImageItems(body.topicImages)
   ]);
 
   return {
@@ -88,9 +116,12 @@ const buildTopicPayload = async (body) => {
     isPublished: body.isPublished,
     category: body.category,
     dressCodeGuide: {
-      doImage,
-      dontImage
+      doImage: doItems[0]?.image || '',
+      dontImage: dontItems[0]?.image || '',
+      doItems,
+      dontItems
     },
+    topicImages,
     resourceLinks: sanitizeResourceLinks(body.resourceLinks)
   };
 };
